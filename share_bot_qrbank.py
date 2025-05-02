@@ -7,7 +7,7 @@
 import requests, telebot, os
 from telebot import types
 
-API_TOKEN_BOT = "6790339105:AAEKvcd-EmkC3mXI3IDAWVi9uIienb7B-DM"
+API_TOKEN_BOT = "THAY_API_BOT"
 bot = telebot.TeleBot(API_TOKEN_BOT)
 filename ="D:\\Python\\QR_LINK_CODE.png"
 
