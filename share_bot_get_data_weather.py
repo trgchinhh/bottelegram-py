@@ -3,7 +3,8 @@ from telebot import types
 from datetime import datetime
 from deep_translator import GoogleTranslator
 
-API_BOT = telebot.TeleBot("THAY_API_BOT")
+API_BOT = "THAY_API_BOT"
+bot = telebot.TeleBot(API_BOT)
 
 def get_data_weather(*,nation: str, lang: str):
     api_key = "THAY_API_KEY_OPEN_WEATHER" # api_key openweather
@@ -84,7 +85,7 @@ def get_data_weather(*,nation: str, lang: str):
         return e
 
 @bot.message_handler(commands=['vitri'])
-def input_weather():
+def input_weather(message):
     try:
         parts = message.text[1:].upper()
         if(len(parts) != 3):
@@ -93,9 +94,8 @@ def input_weather():
         lang = parts[2]     
         print(get_data_weather(nation=nation, lang=lang))
     except Exception as e:
-        bot.send_message(message.chat.id f"Lỗi {e}")
+        bot.send_message(message.chat.id, f"Lỗi {e}")
 
 if __name__ == '__main__':
     bot.infinity_polling()
 
-# print(get_data_weather(nation="Ho Chi Minh", lang="vi"))
