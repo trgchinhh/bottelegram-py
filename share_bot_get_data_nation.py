@@ -199,15 +199,3 @@ def tra_loi_ngoai_le(message):
     bot.send_message(message.chat.id, f"<b>❌ Sai lệnh. Vui lòng xem lại</b>", parse_mode = "HTML", reply_markup = keyboard)
     
 bot.infinity_polling()
-
-
-
-
-
-
-
-
-
-
-
-    
