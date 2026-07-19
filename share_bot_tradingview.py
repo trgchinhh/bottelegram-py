@@ -1,20 +1,89 @@
 # ! py
-# Bot tradingview vipro
-# Copyright by @Truongchinh304 and ChatGPT
+# Bot c_tradingview 
+# Copyright by NTC
 
-import requests, time, telebot, os, json 
-from telebot import types 
+import os, http.client, sys
+try:
+    import numpy as np
+    np.NaN = np.nan
+except ImportError:
+    os.system("pip install numpy==1.24.3")
+    import numpy as np
+    np.NaN = np.nan
+
+libraries = [
+    "requests", "telebot", "pandas", "matplotlib", "mplfinance", 
+    "fpdf", "lequangminh", "pandas-ta", "panda_ta", "flask"
+]    
+for lib in libraries:
+    try:
+        __import__(lib)
+    except ImportError:
+        os.system(f"pip install {lib}") 
+
+from flask import Flask
+from threading import Thread
+import requests, time, telebot, json, io
+from telebot import types
 import pandas as pd
 import matplotlib
 import mplfinance as mpf
 from fpdf import FPDF
+from lequangminh import *
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import pandas_ta as ta
 
-TOKEN_API_BOT = 'THAY_API_BOT'
+try:
+    import pandas_ta as ta
+except Exception as e:
+    print(f"Lỗi khi import pandas_ta: {e}")
+    os.system("pip uninstall pandas-ta -y")
+    os.system("pip install pandas-ta==0.3.14b0")
+    import pandas_ta as ta
+
+# Hàm tạo banner 
+def Banner():
+    os.system("cls" if os.name == "nt" else "clear") # xoá tất cả những thứ còn lại trên terminal
+    title = "\nMọi thắc mắc xin liên hệ Telegram: @TruongChinh304 !" 
+    banner = """\n
+██████╗░░█████╗░████████╗   ░█████╗░██████╗░██╗░░░██╗██████╗░████████╗░█████╗░
+██╔══██╗██╔══██╗╚══██╔══╝   ██╔══██╗██╔══██╗╚██╗░██╔╝██╔══██╗╚══██╔══╝██╔══██╗
+██████╦╝██║░░██║░░░██║░░░   ██║░░╚═╝██████╔╝░╚████╔╝░██████╔╝░░░██║░░░██║░░██║
+██╔══██╗██║░░██║░░░██║░░░   ██║░░██╗██╔══██╗░░╚██╔╝░░██╔═══╝░░░░██║░░░██║░░██║
+██████╦╝╚█████╔╝░░░██║░░░   ╚█████╔╝██║░░██║░░░██║░░░██║░░░░░░░░██║░░░╚█████╔╝
+╚═════╝░░╚════╝░░░░╚═╝░░░   ░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░░░░░░░╚═╝░░░░╚════╝░
+\n"""
+    ban = Colorate.Vertical(Colors.DynamicMIX((Col.light_green, Col.light_gray)), Center.XCenter(title)) + Colorate.Vertical(Colors.DynamicMIX((Col.light_red, Col.light_blue)), Center.XCenter(banner.center(300)))
+    for i in ban:
+        sys.stdout.write(i)
+        sys.stdout.flush()
+        time.sleep(0.001)
+
+# Hàm nhập api bot telegram
+'''def nhap_api_bot():
+    while True:
+        api_bot = input("\nNhập API bot telegram: ").strip()
+        url = f"https://api.telegram.org/bot{api_bot}/getMe"
+        try:
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            
+            if data.get("ok"):
+                print(f"API: {api_bot} hợp lệ !")
+                return api_bot
+            else:
+                print("API không hợp lệ! Vui lòng nhập lại.")
+        except Exception as e:
+            print(f"Lỗi : {e}")        
+        except requests.RequestException:
+            print("Lỗi kết nối! Kiểm tra internet và nhập lại.")'''
+
+Banner()
+TOKEN_API_BOT = "API_BOT"
 URL_API_BINANCE= 'https://api.binance.com/api/v3'
 bot = telebot.TeleBot(TOKEN_API_BOT)
-matplotlib.use('Agg') # không dùng đồ họa trực tiếp
+matplotlib.use('Agg') 
 
 # Hàm lấy tỷ giá usd đổi sang vnd 
 def lay_ty_gia_vnd():
@@ -44,7 +113,12 @@ def lay_thong_tin_gioi_han_crypto(ten_crypto, timestamp_thoi_gian_muon_lay, time
     })
     datas = response.json()
     return datas
-        
+
+# hàm lấy qrlink của sepay 
+def qrlink(so_tai_khoan, ten_ngan_hang, so_tien, noi_dung, download):
+    qrlink = f"https://qr.sepay.vn/img?acc={so_tai_khoan}&bank={ten_ngan_hang}&amount={so_tien}&des={noi_dung}&template=compact&download={download}"
+    return qrlink
+
 @bot.message_handler(commands=['start'])
 def start(message):
     user_name = message.from_user.username
@@ -62,7 +136,7 @@ def start(message):
 def gui_danh_sach_crypto(message):
     danh_sach = lay_danh_sach_crypto()
     noi_dung = 'Danh sách các đồng crypto:\n' + '\n'.join(danh_sach)
-    file_path_list_crypto = "D:\\Python\\list_crypto.txt"
+    file_path_list_crypto = "list_crypto.txt"
     if len(noi_dung) > 4096:
         with open(file_path_list_crypto, "w", encoding = "utf-8") as file:
             file.write(noi_dung)
@@ -75,20 +149,22 @@ def huong_dan_su_dung(message):
     huong_dan_su_dung = (
         "<b>HƯỚNG DẪN SỬ DỤNG\n"
         "Lệnh 1: /list (xem danh sách các đồng crypto)\n"
-        "Lệnh 2: /tpsl [tên coin] [giá chốt lời (TP)] [giá chốt lỗ (SL)] (xem thông tin coin đó)\n"
-        "Lệnh 3: /stop (ngưng theo dõi lệnh đang chạy)\n"
-        "Lệnh 4: /gpi [tên coin] [khoảng thời gian muốn lấy thông tin (phút)]\n"
-        "Lệnh 5: /about (xem thông tin account và bot)\n"
-        "Lệnh 6: /finance [tên coin] [khoảng thời giaan (phút)] (xem nến)\n"
-        "Lưu ý:\n"
-        "Khi 1 lệnh đang chạy mà muốn thay TP/SL thì chỉ cần nhập như lệnh và thay đổi TP/SL muốn thay\n"
-        "Lệnh sẽ được update giá mới sau mỗi 3 giây\n"
-        "Nếu nhập lệnh mới bằng coin khác thì lệnh thông tin coin cũ sẽ dừng.</b>"
+        #"Lệnh 2: /tpsl [tên coin] [giá chốt lời (TP)] [giá chốt lỗ (SL)] (xem thông tin coin đó)\n"
+        #"Lệnh 3: /stop (ngưng theo dõi lệnh đang chạy)\n"
+        "Lệnh 2: /gpi [tên coin] [khoảng thời gian muốn lấy thông tin (phút)]\n(Xem thông tin coin dưới dạng json)\n"
+        "Lệnh 3: /about (xem thông tin account và bot)\n"
+        "Lệnh 4: /finance [tên coin] [khoảng thời giaan (phút)] (xem nến)\n(Xem tất cả thông tin về coin + chỉ báo trong thời gian nhất định)\n"
+        "Lệnh 5: /pfinance [chỉ báo] [tên coin] [khoảng thời gian (phút)]\n(Xem thông tin coin chứa chỉ báo và thời gian nhất định)</b>\n"
+        "Lệnh 6: /qrbank [số tiền] [nội dung chuyển khoản]\n(Qr donut cho Admin :V)\n"
+        #"Lưu ý:\n"
+        #"Khi 1 lệnh đang chạy mà muốn thay TP/SL thì chỉ cần nhập như lệnh và thay đổi TP/SL muốn thay\n"
+        #"Lệnh sẽ được update giá mới sau mỗi 3 giây\n"
+        #"Nếu nhập lệnh mới bằng coin khác thì lệnh thông tin coin cũ sẽ dừng.</b>"
     )    
     bot.send_message(message.chat.id, huong_dan_su_dung, parse_mode = "HTML")
 
 # Lệnh /stop
-@bot.message_handler(commands=['stop'])
+#@bot.message_handler(commands=['stop'])
 def dung_theo_doi(message):
     global trang_thai_lenh
     if trang_thai_lenh['dang_chay']:
@@ -169,8 +245,9 @@ def tinh_trung_binh_gia_gan_nhat(ten_crypto):
         gia_trung_binh = sum(gia_dong_cua) / 5  
         return gia_trung_binh 
 
-# Hàm xem khối lượng giá 24h và tpsl     
-@bot.message_handler(commands=['tpsl'])
+# Hàm xem khối lượng giá 24h và tpsl    
+# ------------------------------------------------------ Hạn chế dùng vì requests nhiều dễ bị máy chủ chặn ---------------------------------------------------------- 
+#@bot.message_handler(commands=['tpsl'])
 def gui_thong_tin_crypto_usd(message):
     global trang_thai_lenh
     try:
@@ -370,7 +447,7 @@ def gui_thong_tin_crypto_usd(message):
             gia_truoc_do = gia_hien_tai
             gia_truoc_do_vnd = gia_hien_tai_vnd
             #print(f"➤ Lấy dữ liệu {ten_crypto.replace('USDT', '')} - {ngay_thoi_gian} thành công\n")
-            time.sleep(3)
+            time.sleep(10)
     except Exception as e:
         trang_thai_lenh['dang_chay'] = False
         bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e} !</b>", parse_mode = "HTML")
@@ -382,24 +459,23 @@ def lay_gia_trong_khoang_thoi_gian(message):
         danh_sach = lay_danh_sach_crypto()
         nhap_thong_tin = message.text.split()
         if len(nhap_thong_tin) != 3:
-            bot.send_message(message.chat.id, "<b>Vui lòng nhập đúng định dạng: /gpi [tên coin] [khoảng thời gian lấy data (m)]</b>", parse_mode = "HTML")
+            bot.send_message(message.chat.id, "<b>Vui lòng nhập đúng định dạng: /gpi [tên coin] [khoảng thời gian lấy data (m)]</b>", parse_mode="HTML")
             return 
         ten_crypto = nhap_thong_tin[1].upper() + "USDT"
         khoang_thoi_gian = int(nhap_thong_tin[2]) 
         if ten_crypto not in danh_sach:
-            bot.send_message(message.chat.id, "<b>Đồng crypto không hợp lệ. Vui lòng nhập lại</b>", parse_mode = "HTML")
+            bot.send_message(message.chat.id, "<b>Đồng crypto không hợp lệ. Vui lòng nhập lại</b>", parse_mode="HTML")
             return 
-        if khoang_thoi_gian < 1 :
-            bot.send_message(message.chat.id, "<b>Khoảng thời gian không hợp lệ. Vui lòng nhập lại</b>", parse_mode = "HTML")    
+        if khoang_thoi_gian < 1:
+            bot.send_message(message.chat.id, "<b>Khoảng thời gian không hợp lệ. Vui lòng nhập lại</b>", parse_mode="HTML")    
             return 
         thoi_gian_hien_tai = datetime.now()
-        khoang_thoi_gian_muon_lay = khoang_thoi_gian 
-        thoi_gian_muon_lay = thoi_gian_hien_tai - timedelta(minutes=khoang_thoi_gian_muon_lay)
+        thoi_gian_muon_lay = thoi_gian_hien_tai - timedelta(minutes=khoang_thoi_gian)
         timestamp_thoi_gian_muon_lay = int(thoi_gian_muon_lay.timestamp() * 1000)
         timestamp_hien_tai = int(thoi_gian_hien_tai.timestamp() * 1000)
         datas = lay_thong_tin_gioi_han_crypto(ten_crypto, timestamp_thoi_gian_muon_lay, timestamp_hien_tai)
         if datas:
-            all_noi_dung = ""
+            danh_sach_noi_dung = []  # Lưu danh sách JSON hợp lệ
             for data in datas:
                 thoi_gian = datetime.fromtimestamp(data[0] / 1000)  
                 gia_mo_cua = data[1]
@@ -408,45 +484,44 @@ def lay_gia_trong_khoang_thoi_gian(message):
                 gia_thap_nhat = data[3]
                 khoi_luong = data[5]
                 noi_dung = {
-                        "Thời gian": thoi_gian.strftime("%Y-%m-%d %H:%M:%S"), 
-                        "Giá mở cửa": gia_mo_cua,
-                        "Giá đóng cửa": gia_dong_cua,
-                        "Giá cao nhất": gia_cao_nhat,
-                        "Giá thấp nhất": gia_thap_nhat,
-                        "Khối lượng": khoi_luong
+                    "Thời gian": thoi_gian.strftime("%Y-%m-%d %H:%M:%S"), 
+                    "Giá mở cửa": gia_mo_cua,
+                    "Giá đóng cửa": gia_dong_cua,
+                    "Giá cao nhất": gia_cao_nhat,
+                    "Giá thấp nhất": gia_thap_nhat,
+                    "Khối lượng": khoi_luong
                 }
-                all_noi_dung += json.dumps(noi_dung, indent=4, ensure_ascii=False) + "\n"
-            if len(all_noi_dung) < 4096:
+                danh_sach_noi_dung.append(noi_dung)  
+                all_noi_dung_json = json.dumps(danh_sach_noi_dung, indent=4, ensure_ascii=False)
+            if len(all_noi_dung_json) < 4096:
                 unique_id = str(message.chat.id) + "_" + str(datetime.now().timestamp())
                 data_storage[unique_id] = {
                     "ten_crypto": ten_crypto,
                     "khoang_thoi_gian": khoang_thoi_gian,
-                    "all_noi_dung": all_noi_dung
+                    "all_noi_dung": all_noi_dung_json
                 }
                 nut_ghi_vao_file = telebot.types.InlineKeyboardButton("📝 Ghi nội dung vào file", callback_data=f"gvf:{unique_id}")
                 keyboard = telebot.types.InlineKeyboardMarkup()
                 keyboard.row(nut_ghi_vao_file)
-                #bot.send_message(message.chat.id, f"<pre>Giá của {ten_crypto.replace('USDT', '')} trong {khoang_thoi_gian} phút đổ lại\n\n{all_noi_dung}</pre>", parse_mode="HTML", reply_markup=keyboard)
-                bot.send_message(message.chat.id, f"```json\nGiá của {ten_crypto.replace('USDT', '')} trong {khoang_thoi_gian} phút đổ lại\n\n{all_noi_dung}```", parse_mode="MarkdownV2", reply_markup=keyboard)
+                bot.send_message(message.chat.id, f"```json\nGiá của {ten_crypto.replace('USDT', '')} trong {khoang_thoi_gian} phút đổ lại\n\n{all_noi_dung_json}```", parse_mode="MarkdownV2", reply_markup=keyboard)
             else:
-                ghi_noi_dung_vao_file(ten_crypto, khoang_thoi_gian, all_noi_dung, message)
+                ghi_noi_dung_vao_file(ten_crypto, khoang_thoi_gian, danh_sach_noi_dung, message)
     except Exception as e:
-        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e} !</b>", parse_mode = "HTML")
+        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e} !</b>", parse_mode="HTML")
 
-# Hàm ghi nội dung vào file         
-def ghi_noi_dung_vao_file(ten_crypto, khoang_thoi_gian, all_noi_dung, message):
-    file_path_crypto = f"D:\\Python\\{ten_crypto}-{khoang_thoi_gian}.txt"
+
+# Hàm ghi nội dung vào file đúng JSON
+def ghi_noi_dung_vao_file(ten_crypto, khoang_thoi_gian, danh_sach_noi_dung, message):
+    file_path_crypto = f"{ten_crypto}-{khoang_thoi_gian}.json"
     try:
-        file_exists = os.path.isfile(file_path_crypto)
-        with open(file_path_crypto, "a", encoding="utf-8") as file:
-            if not file_exists:
-                file.write(f"Giá của {ten_crypto.replace('USDT', '')} trong {khoang_thoi_gian} phút đổ lại\n\n")
-                file.write(all_noi_dung + "\n")
+        with open(file_path_crypto, "w", encoding="utf-8") as file:  # Ghi đè file mới
+            json.dump(danh_sach_noi_dung, file, indent=4, ensure_ascii=False)
         with open(file_path_crypto, "rb") as file:
-            bot.send_document(message.chat.id, file, caption = "Hoàn thành gửi file !")     
-        os.remove(file_path_crypto)    
+            bot.send_document(message.chat.id, file, caption="Hoàn thành gửi file!")     
+        os.remove(file_path_crypto)  
     except Exception as e:
-        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e} !</b>", parse_mode = "HTML")
+        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e} !</b>", parse_mode="HTML")
+
 
 def lay_thong_tin_gioi_han_crypto_chart(ten_crypto, timestamp_thoi_gian_muon_lay, timestamp_hien_tai, message):
     response = requests.get(f'{URL_API_BINANCE}/klines', params={
@@ -480,7 +555,7 @@ def lay_thong_tin_gioi_han_crypto_chart(ten_crypto, timestamp_thoi_gian_muon_lay
         return None
 
 def ghi_vao_file(ten_crypto, danh_sach_moi):
-    file_path = f'D:\\Python\\{ten_crypto.upper()}.json'
+    file_path = f'{ten_crypto.upper()}.json'
     try:
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
@@ -495,7 +570,7 @@ def ghi_vao_file(ten_crypto, danh_sach_moi):
 
 # Biểu đồ chỉ báo MA
 def ve_bieu_do_nen_ma(message, ten_crypto):
-    with open(f"D:\\Python\\{ten_crypto}.json", "r", encoding="utf-8") as file:
+    with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
         data = json.load(file)
     if not data:  
         bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể vẽ biểu đồ</b>", parse_mode="HTML")
@@ -520,20 +595,20 @@ def ve_bieu_do_nen_ma(message, ten_crypto):
         df,
         type='candle', 
         style='charles', 
-        title="Biểu đồ giá BTC/USDT",
+        title=f"Biểu đồ giá {ten_crypto}/USDT với MA",
         ylabel="Giá (USDT)",
         volume=True,  
         ylabel_lower="Khối lượng",
         mav=(5, 10),  # Thêm MA
-        savefig='D:\\Python\\bieudo_ma.png'  
+        savefig='bieudo_ma.png'  
     )
-    """with open('D:\\Python\\bieudo_ma.png', 'rb') as file:
+    with open('bieudo_ma.png', 'rb') as file:
         thoi_gian_hien_tai = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến MA lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")"""
+        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến MA của {ten_crypto} lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")
 
 # Biểu đồ chỉ báo BOLL 
 def ve_bieu_do_nen_boll(message, ten_crypto):
-    with open(f"D:\\Python\\{ten_crypto}.json", "r", encoding="utf-8") as file:
+    with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
         data = json.load(file)
     if not data:  
         bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể vẽ biểu đồ</b>", parse_mode="HTML")
@@ -566,19 +641,19 @@ def ve_bieu_do_nen_boll(message, ten_crypto):
         df,
         type='candle',
         style='charles',
-        title="Biểu đồ giá BTC/USDT với Bollinger Bands",
+        title=f"Biểu đồ giá {ten_crypto}/USDT với Bollinger Bands",
         ylabel="Giá (USDT)",
         volume=True,
         ylabel_lower="Khối lượng",
         addplot=apds,  # Thêm Bollinger Bands
-        savefig='D:\\Python\\bieudo_boll.png'
+        savefig='bieudo_boll.png'
     )
-    """with open('D:\\Python\\bieudo_boll.png', 'rb') as file:
+    with open('bieudo_boll.png', 'rb') as file:
         thoi_gian_hien_tai = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến BOLL lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")"""
+        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến BOLL của {ten_crypto} lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")
 
 def ve_bieu_do_nen_ema(message, ten_crypto):
-    with open(f"D:\\Python\\{ten_crypto}.json", "r", encoding="utf-8") as file:
+    with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
         data = json.load(file)
     if not data:  
         bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể vẽ biểu đồ</b>", parse_mode="HTML")
@@ -607,20 +682,109 @@ def ve_bieu_do_nen_ema(message, ten_crypto):
         df,
         type='candle',
         style='charles',
-        title="Biểu đồ giá BTC/USDT với EMA",
+        title=f"Biểu đồ giá {ten_crypto}/USDT với EMA",
         ylabel="Giá (USDT)",
         volume=True,
         ylabel_lower="Khối lượng",
         addplot=apds,  # Thêm EMA vào biểu đồ
-        savefig='D:\\Python\\bieudo_ema.png'
+        savefig='bieudo_ema.png'
     )
-    """with open('D:\\Python\\bieudo_ema.png', 'rb') as file:
+    with open('bieudo_ema.png', 'rb') as file:
         thoi_gian_hien_tai = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến EMA lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")"""
+        bot.send_photo(message.chat.id, file, caption = f'<b>Biểu đồ nến EMA của {ten_crypto} lúc: {thoi_gian_hien_tai}</b>', parse_mode="HTML")    
+
+def ve_bieu_do_nen_sar(message, ten_crypto):
+    with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not data:
+        bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể vẽ biểu đồ</b>", parse_mode="HTML")
+        return
+    df = pd.DataFrame(data)
+    df["Thời gian"] = pd.to_datetime(df["Thời gian"])
+    df.rename(columns={
+        "Thời gian": "Date",
+        "Giá mở cửa": "Open",
+        "Giá đóng cửa": "Close",
+        "Giá cao nhất": "High",
+        "Giá thấp nhất": "Low",
+        "Khối lượng": "Volume"
+    }, inplace=True)
+    df["High"] = df["High"].astype(float)
+    df["Low"] = df["Low"].astype(float)
+    df["Open"] = df["Open"].astype(float)
+    df["Close"] = df["Close"].astype(float)
+    df["Volume"] = df["Volume"].astype(float)
+    df.set_index("Date", inplace=True)
+    def calculate_sar(high, low, af=0.02, max_af=0.2):
+        sar = [low[0]]  # Giá trị SAR ban đầu
+        ep = high[0]  # Điểm cực trị (Extreme Point)
+        trend = 1  # 1 = uptrend, -1 = downtrend
+        af_step = af  # Hệ số tăng tốc ban đầu
+        for i in range(1, len(high)):
+            new_sar = sar[-1] + af_step * (ep - sar[-1])
+            if trend == 1:  # Xu hướng tăng
+                new_sar = min(new_sar, low[i - 1], low[i])
+                if high[i] > ep:
+                    ep = high[i]
+                    af_step = min(af_step + af, max_af)
+                if low[i] < new_sar:
+                    trend = -1
+                    af_step = af
+                    ep = low[i]
+            else:  # Xu hướng giảm
+                new_sar = max(new_sar, high[i - 1], high[i])
+                if low[i] < ep:
+                    ep = low[i]
+                    af_step = min(af_step + af, max_af)
+                if high[i] > new_sar:
+                    trend = 1
+                    af_step = af
+                    ep = high[i]
+            sar.append(new_sar)
+        return sar
+    df["SAR"] = calculate_sar(df["High"].values, df["Low"].values)
+    apds = [mpf.make_addplot(df["SAR"], color='red', marker='o', markersize=5, scatter=True)]
+    mpf.plot(df, type='candle', style='charles',
+             title=f"Biểu đồ SAR của {ten_crypto}/USDT",
+             ylabel="Giá (USDT)", volume=True,
+             addplot=apds, savefig='bieudo_sar.png')
+    with open('bieudo_sar.png', 'rb') as file:
+        bot.send_photo(message.chat.id, file, caption=f"<b>Biểu đồ SAR của {ten_crypto}</b>", parse_mode="HTML")
+
+def ve_bieu_do_nen_avl(message, ten_crypto):
+    with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not data:
+        bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể vẽ biểu đồ</b>", parse_mode="HTML")
+        return
+    df = pd.DataFrame(data)
+    df["Thời gian"] = pd.to_datetime(df["Thời gian"])
+    df.rename(columns={
+        "Thời gian": "Date",
+        "Giá mở cửa": "Open",
+        "Giá đóng cửa": "Close",
+        "Giá cao nhất": "High",
+        "Giá thấp nhất": "Low",
+        "Khối lượng": "Volume"
+    }, inplace=True)
+    df["High"] = df["High"].astype(float)
+    df["Low"] = df["Low"].astype(float)
+    df["Open"] = df["Open"].astype(float)
+    df["Close"] = df["Close"].astype(float)
+    df["Volume"] = df["Volume"].astype(float)
+    df.set_index("Date", inplace=True)
+    df["AVL"] = df["Close"].rolling(window=10).mean()  # Lấy trung bình 10 phiên
+    apds = [mpf.make_addplot(df["AVL"], color='blue')]
+    mpf.plot(df, type='candle', style='charles',
+             title=f"Biểu đồ AVL của {ten_crypto}/USDT",
+             ylabel="Giá (USDT)", volume=True,
+             addplot=apds, savefig='bieudo_avl.png')
+    with open('bieudo_avl.png', 'rb') as file:
+        bot.send_photo(message.chat.id, file, caption=f"<b>Biểu đồ AVL của {ten_crypto}</b>", parse_mode="HTML")
 
 def du_doan_mua_ban(message, ten_crypto):
     try:
-        with open(f"D:\\Python\\{ten_crypto}.json", "r", encoding="utf-8") as file:
+        with open(f"{ten_crypto}.json", "r", encoding="utf-8") as file:
             data = json.load(file)
         if not data:  
             bot.send_message(message.chat.id, "<b>Dữ liệu rỗng, không thể đưa ra dự đoán</b>", parse_mode="HTML")
@@ -661,21 +825,26 @@ def tao_pdf_tu_anh(ten_crypto, noi_dung_du_doan):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.add_font("FreeSerif", '', "D:\\Python\\FreeSerif.ttf", uni=True)
+    pdf.add_font("FreeSerif", '', "FreeSerif.ttf", uni=True)
     pdf.set_font("FreeSerif", size=14)
     pdf.cell(200, 10, txt=f"Biểu đồ phân tích {ten_crypto}", ln=True, align='C')
     pdf.cell(200, 10, txt=f"{noi_dung_du_doan}")
-    pdf.image('D:\\Python\\bieudo_ma.png', x=10, y=30, w=190)
-    pdf.add_page()
-    pdf.image('D:\\Python\\bieudo_boll.png', x=10, y=30, w=190)
-    pdf.add_page()
-    pdf.image('D:\\Python\\bieudo_ema.png', x=10, y=30, w=190)
-    pdf_path = f"D:\\Python\\{ten_crypto}_chart_analysis.pdf"
-    pdf.output(pdf_path)
+    danh_sach_bieu_do = [
+        "bieudo_ma.png",    # MA
+        "bieudo_boll.png",  # Bollinger Bands
+        "bieudo_ema.png",   # EMA
+        "bieudo_sar.png",   # SAR
+        "bieudo_avl.png"    # AVL
+    ]
+    for hinh in danh_sach_bieu_do:
+        pdf.add_page()
+        pdf.image(f'{hinh}', x=10, y=30, w=190)
+    pdf_path = f"{ten_crypto}_chart_analysis.pdf"
+    pdf.output(pdf_path)    
     return pdf_path
 
 @bot.message_handler(commands=['finance'])
-def main(message):
+def finance(message):
     try:
         danh_sach = lay_danh_sach_crypto()
         parts = message.text.split(maxsplit=2)
@@ -698,17 +867,127 @@ def main(message):
         ve_bieu_do_nen_ma(message, ten_crypto)
         ve_bieu_do_nen_boll(message, ten_crypto)
         ve_bieu_do_nen_ema(message, ten_crypto)
+        ve_bieu_do_nen_sar(message, ten_crypto)
+        ve_bieu_do_nen_avl(message, ten_crypto)
         noi_dung_du_doan = du_doan_mua_ban(message, ten_crypto) 
         pdf_path = tao_pdf_tu_anh(ten_crypto, noi_dung_du_doan)
         with open(pdf_path, 'rb') as pdf_file:
             bot.send_document(message.chat.id, pdf_file, caption=f"<b>Phân tích biểu đồ {ten_crypto} trong {khoang_thoi_gian_muon_lay} phút</b>", parse_mode="HTML")
-        os.remove(f'D:\\Python\\{ten_crypto.upper()}.json')    
-        os.remove('D:\\Python\\bieudo_ma.png')
-        os.remove('D:\\Python\\bieudo_boll.png')
-        os.remove('D:\\Python\\bieudo_ema.png')
+        os.remove(f'{ten_crypto.upper()}.json')    
+        os.remove('bieudo_ma.png')
+        os.remove('bieudo_boll.png')
+        os.remove('bieudo_ema.png')
+        os.remove('bieudo_sar.png')
+        os.remove('bieudo_avl.png')
         os.remove(pdf_path)
     except Exception as e:
         bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi: {e}</b>", parse_mode="HTML")        
+
+@bot.message_handler(commands=['pfinance'])
+def pfinance(message):
+    try:
+        danh_sach = lay_danh_sach_crypto()
+        parts = message.text.split(maxsplit=3)
+        if len(parts) < 4:
+            bot.send_message(message.chat.id, "<b>Nhập theo định dạng /pfinance [Loại chỉ báo] [Tên coin] [Thời gian (m)]</b>", parse_mode="HTML")
+            return 
+        loai_chi_bao = parts[1].lower()
+        loai_chi_bao_cho_phep = ["ma", "ema", "boll", "sar", "avl"]
+        if loai_chi_bao not in loai_chi_bao_cho_phep:
+            bot.send_message(message.chat.id, "<b>Chỉ báo cho phép là 'ma' 'ema' 'boll' 'sar' 'avl'</b>", parse_mode="HTML")
+            return 
+        ten_crypto = parts[2].upper() + "USDT"
+        khoang_thoi_gian_muon_lay = int(parts[3])
+        if ten_crypto not in danh_sach:
+            bot.send_message(message.chat.id, f"<b>{ten_crypto} không có trong danh sách tên coin</b>", parse_mode="HTML")
+            return 
+        if khoang_thoi_gian_muon_lay < 20 or khoang_thoi_gian_muon_lay > 400:
+            bot.send_message(message.chat.id, "<b>Giới hạn thời gian trong khoảng 20 - 400 phút</b>", parse_mode="HTML")
+            return
+        thoi_gian_hien_tai = datetime.now()
+        thoi_gian_muon_lay = thoi_gian_hien_tai - timedelta(minutes=khoang_thoi_gian_muon_lay)
+        timestamp_thoi_gian_muon_lay = int(thoi_gian_muon_lay.timestamp() * 1000)
+        timestamp_hien_tai = int(thoi_gian_hien_tai.timestamp() * 1000)
+        lay_thong_tin_gioi_han_crypto_chart(ten_crypto, timestamp_thoi_gian_muon_lay, timestamp_hien_tai, message)
+        if loai_chi_bao == "ma":
+            ve_bieu_do_nen_ma(message, ten_crypto)
+            os.remove("bieudo_ma.png")
+        elif loai_chi_bao == "boll":
+            ve_bieu_do_nen_boll(message, ten_crypto)
+            os.remove("bieudo_boll.png")
+        elif loai_chi_bao == "ema":    
+            ve_bieu_do_nen_ema(message, ten_crypto)
+            os.remove("bieudo_ema.png")
+        elif loai_chi_bao == "sar":
+            ve_bieu_do_nen_sar(message, ten_crypto)
+            os.remove("bieudo_sar.png")
+        else:
+            ve_bieu_do_nen_avl(message, ten_crypto)
+            os.remove("bieudo_avl.png")
+        if os.path.exists(f"{ten_crypto}.json"):
+            os.remove(f"{ten_crypto}.json")    
+    except Exception as e:
+        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi {e}</b>", parse_mode="HTML")        
+
+filename = "QR_LINK_CODE.png"
+def download_qr_image(url, noi_dung,  message):
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(filename, "wb") as file:
+            file.write(response.content)
+        with open(filename, "rb") as file:    
+            bot.send_photo(message.chat.id, file, caption = noi_dung, parse_mode = "HTML")
+        os.remove(filename)    
+        print(f"QR code đã được tải xuống thành công: {filename}")
+    else:
+        print("Không thể tải QR code. Vui lòng kiểm tra lại URL")
+
+@bot.message_handler(commands=["qrbank"])
+def lay_thong_tin(message):
+    User_id = str(message.chat.id)
+    bank_list = [
+        "mbbank", "dongabank", "viettinbank", "vietcombank", "techcombank", 
+        "bidv", "acb", "sacombank", "vpbank", "agribank",
+        "hdbank", "tpbank", "shb", "eximbank", "ocb",
+        "seabank", "bacabank", "pvcombank", "scb", "vib",
+        "namabank", "abbank", "lpbank", "vietabank", "msb",
+        "nvbank", "pgbank", "publicbank", "cimbbank", "uob"
+    ]
+    try:
+        parts = message.text.split(maxsplit=2)
+        if len(parts) != 3:
+            bot.send_message(message.chat.id, "<b>Nhập theo định dạng /qrbank [Số tiền] [Nội dung chuyển khoản]</b>", parse_mode = "HTML")
+            return 
+        so_tien = int(parts[1])
+        if not isinstance(so_tien, int):
+            bot.send_message(message.chat.id, "<b>Tiền phải là số nguyên, nếu không muốn để số tiền thì nhập 0</b>", parse_mode = "HTML")
+            return
+        if so_tien < 10000:
+            bot.send_message(message.chat.id, "<b>Tiền phải lớn hơn 10.000 VNĐ</b>", parse_mode = "HTML")
+            return    
+        so_tai_khoan = "1430042006"
+        ma_ngan_hang = "techcombank"
+        noi_dung = ""    
+        noi_dung_nguoi_nhap = " ".join(parts[2:]) if len(parts) > 2 else ""
+        if(noi_dung_nguoi_nhap == ""):
+            noi_dung = "Chuyển khoản" 
+        else:
+            noi_dung = noi_dung_nguoi_nhap    
+        link = qrlink(so_tai_khoan, ma_ngan_hang, so_tien, noi_dung, "true")
+        dinh_dang_so_tien = f"{so_tien:,.0f}"
+        dinh_dang_so_tien = dinh_dang_so_tien.replace(",", ".")
+        noi_dung_thong_tin = (
+            f"<b>➤ THÔNG TIN QRCODE !!!\n" 
+            f"┏━━━━━━━━━━━━━━━━━━━━━━━┓\n"
+            f"┣➤ 💳 Số TK: <code>{so_tai_khoan}</code>\n"
+            f"┣➤ 🏦 Bank: {ma_ngan_hang.upper()}\n"
+            f"┣➤ 💵 Số tiền: {dinh_dang_so_tien} VNĐ\n"
+            f"┣➤ 📋 Nội dung: <code>{noi_dung}</code>\n"
+            f"┗━━━━━━━━━━━━━━━━━━━━━━━┛</b>\n"
+        )
+        download_qr_image(link, noi_dung_thong_tin, message)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi: {e}</b>", parse_mode = "HTML")    
 
 # Hàm trả lời ngoại lệ     
 @bot.message_handler(func=lambda message: True)
@@ -719,18 +998,23 @@ def tra_loi_ngoai_le(message):
     keyboard.row(huong_dan_su_dung)
     bot.send_message(message.chat.id, f"<b>❌ Sai lệnh. Vui lòng xem lại</b>", parse_mode='HTML',reply_markup=keyboard)
 
-if __name__ == "__main__": 
-    print("Bot đang khỏi chạy ...")
+def RUN_BOT_TRADINGVIEW():
     try:
         while True:
             if lay_thong_tin_crypto("BTCUSDT") and lay_ty_gia_vnd() and lay_danh_sach_crypto():
-                print("Kết nối tất cả thành công ")
-                break
-        bot.infinity_polling(timeout=10)
+                print("Kết nối tất cả thành công")
+                break    
+        print("BOT ĐANG HOẠT ĐỘNG ...")  
+        while True:
+            try:
+                bot.infinity_polling(timeout=10)
+            except Exception as e:
+                print(f"Lỗi polling: {e}")
+                time.sleep(5)
     except Exception as e:
-        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi: {e}</b>", parse_mode="HTML")
-    except http.client.HTTPException as http_err:
-        bot.send_message(message.chat.id, f"<b>Đã xảy ra lỗi HTTP: {http_err}</b>", parse_mode="HTML")
+        print(f"Đã xảy ra lỗi: {e}")
 
-# THE END
-         
+if __name__ == "__main__": 
+    RUN_BOT_TRADINGVIEW()
+
+# The end
